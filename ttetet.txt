@@ -1,0 +1,82 @@
+For a 5 Years of Experience (YOE) Mid-to-Senior Developer, interviewers will not ask you to simply define async/await vs .then(). Instead, they will test your deep architectural understanding of the Node.js Event Loop, concurrency limitations, and error propagation bugs.
+Here are the top scenario-based interview questions on this topic, along with what the interviewer is actually looking for in your response.
+------------------------------
+## 1. The Global Thread Block Fallacy
+Question: "Since await pauses the execution of a function, if 10,000 users concurrently hit an Express route that uses await database.find(), will the 10,001st user experience a delay because the single thread is paused?"
+
+* What they are testing: Your understanding of the Node.js Event Loop and non-blocking I/O.
+* The Senior Answer: No, they will not experience a delay. await only pauses the context of that specific execution frame (the generator/async function wrapper). It does not pause the underlying V8 thread. When await is hit, the function yields control back to the Event Loop. The Event Loop registers the I/O callback via libuv and is immediately free to handle incoming network requests for the 10,001st user. The execution frame is only pushed back onto the call stack once the microtask queue resolves the database promise. [1, 2, 3] 
+
+------------------------------
+## 2. Error Propagation & Unhandled Rejections
+Question: "Look at this code block. Is there any structural bug here regarding error handling? If fetchData() fails, what happens?"
+
+async function handleRequest(req, res) {
+  try {
+    fetchData().then(data => {
+      res.status(200).json(data);
+    });
+  } catch (err) {
+    res.status(500).send("Server Error");
+  }
+}
+
+
+* What they are testing: Your awareness of combining promise styles incorrectly and how exceptions bubble up.
+* The Senior Answer: Yes, this creates an unhandled promise rejection bug. Because fetchData() uses .then() without an internal .catch(), and it is not being await-ed inside the try block, the try/catch wrapper is entirely useless. The try block executes synchronously, sees a pending promise, and immediately exits. When fetchData() eventually rejects asynchronously later, the exception has nowhere to bubble up, bypasses the catch block entirely, and triggers an UnhandledPromiseRejection. The client will hang forever. To fix it, you must append .catch() to the chain or prepend await to fetchData(). [4, 5, 6] 
+
+------------------------------
+## 3. Microtask Queue Sequencing (Output Prediction)
+Question: "What is the exact execution order of the console logs in this snippet, and why?"
+
+console.log('1');
+setTimeout(() => console.log('2'), 0);
+Promise.resolve().then(() => console.log('3'));async function main() {
+  await Promise.resolve();
+  console.log('4');
+}
+main();
+console.log('5');
+
+
+* What they are testing: Your mastery over the Microtask Queue (Promises/await) vs the Macrotask Queue (setTimeout). [7, 8, 9] 
+* The Senior Answer: The order is 1, 5, 3, 4, 2.
+* 1 and 5 are synchronous code on the main execution thread and run immediately.
+   * setTimeout goes into the Macrotask Queue.
+   * The .then() callback goes into the Microtask Queue.
+   * The await inside main() pauses the rest of that function and schedules the code below it (4) into the Microtask Queue right behind 3.
+   * The Event Loop executes all Microtasks before moving to Macrotasks, running 3 then 4. Finally, it processes the Macrotask queue, executing 2. [10, 11, 12, 13, 14] 
+
+------------------------------
+## 4. Accidental Linear Execution (Performance Bottleneck)
+Question: "You need to fetch a user profile, their order history, and their loyalty points balances from three separate services. How do you implement this efficiently using async/await?"
+
+// Is this optimal? If not, how do you fix it?const user = await getUser();const orders = await getOrders(user.id);const points = await getLoyaltyPoints(user.id);
+
+
+* What they are testing: Your ability to spot accidental synchronous-like bottlenecks and execute parallel operations.
+* The Senior Answer: This implementation creates an artificial bottleneck. getLoyaltyPoints does not depend on orders, yet it is blocked waiting for getOrders to finish. However, getOrders and getLoyaltyPoints both depend on user.id.
+To optimize this, I would fetch the user linearly, but fetch the orders and points in parallel using concurrent execution patterns:
+
+const user = await getUser();// Fire both network requests concurrentlyconst [orders, points] = await Promise.all([
+  getOrders(user.id),
+  getLoyaltyPoints(user.id)
+]);
+
+
+Would you like to drill down into the advanced mechanics of Promise.all vs Promise.allSettled for handling multi-service backend architectures, or practice code for an interviewer's live-coding challenge?
+
+[1] [https://www.linkedin.com](https://www.linkedin.com/posts/apurva-soni_laravel-interview-interviewquestions-activity-7322052735032250368-kHAl)
+[2] [https://www.geeksforgeeks.org](https://www.geeksforgeeks.org/javascript/javascript-function-interview-questions/)
+[3] [https://javascript.plainenglish.io](https://javascript.plainenglish.io/top-12-advanced-javascript-interview-questions-master-the-core-concepts-51a04067d6a2)
+[4] [https://medium.com](https://medium.com/@kantmusk/javascript-interview-questions-they-actually-ask-in-2026-and-not-the-ones-from-tutorials-e722f5b9be6d)
+[5] [https://meduzzen.com](https://meduzzen.com/blog/node-js-interview-questions/)
+[6] [https://medium.com](https://medium.com/@swetha.kattukota/advanced-javascript-interview-questions-with-code-examples-2025-04f9779206a1)
+[7] [https://dev.to](https://dev.to/greatfrontend/top-javascript-interview-questions-for-2-years-of-experience-20m9)
+[8] [https://medium.com](https://medium.com/@akshaali01234/the-javascript-output-questions-that-keep-appearing-in-frontend-interviews-2965f651c189)
+[9] [https://dev.to](https://dev.to/greatfrontend/questions-for-advanced-javascript-interviews-with-10-years-of-experience-27m5)
+[10] [https://hackernoon.com](https://hackernoon.com/practical-tasks-for-javascript-interview)
+[11] [https://meduzzen.com](https://meduzzen.com/blog/node-js-interview-questions/)
+[12] [https://www.linkedin.com](https://www.linkedin.com/pulse/7-tricky-javascript-interview-questions-aayush-patniya)
+[13] [https://rahuulmiishra.medium.com](https://rahuulmiishra.medium.com/frontend-and-javascript-interview-questions-2e3a9b84941d)
+[14] [https://www.curotec.com](https://www.curotec.com/interview-questions/125-web-developer-interview-questions/)
