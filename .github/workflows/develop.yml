@@ -1,0 +1,19 @@
+name: develop-pipeline
+
+on: 
+  push:
+    branches:
+      - develop
+
+jobs:
+  build-test-job:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v6
+
+      - name: print text
+        run: echo "Hello World"
+  
+    
